@@ -556,6 +556,7 @@
     peer:null, conn:null, isHost:false, roomCode:null, hostPeerId:null,
     connected:false, reconnecting:false, reconnectAttempts:0,
     onData:null, onOpen:null, onClose:null, onRetry:null, onGiveUp:null,
+    _reliableSeq:0, _pendingReliable:{}, _processedRids:null,
     makeId(code){ return 'circlepong-eo174a-'+code; },
     randomCode(){
       const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O — avoids confusion
@@ -607,7 +608,16 @@
     },
     _connectToHost(onStatus){
       let resolved = false;
-      const conn = this.peer.connect(this.hostPeerId, {reliable:true});
+      // Unreliable + unordered on purpose: this channel carries fast, frequently-superseded
+      // gameplay data (position snapshots / input). A reliable/ordered channel here means a
+      // single lost or delayed packet blocks every packet behind it (head-of-line blocking) —
+      // over a shaky mobile connection that shows up as the guest's game freezing for a beat
+      // and then lurching through a burst of stale positions all at once. With an unreliable
+      // channel a dropped snapshot just gets skipped; the next one (already fresher) arrives
+      // on time instead. Rare one-off messages that truly must arrive (hello/config/quit/
+      // rematch) go through Net.sendReliable() instead, which layers its own lightweight
+      // ack+resend on top of this same channel.
+      const conn = this.peer.connect(this.hostPeerId, {reliable:false});
       conn.on('open', ()=>{ resolved = true; this._attachConn(conn); onStatus && onStatus('Connected!', false, true); });
       conn.on('error', ()=>{ if(!resolved) onStatus && onStatus('Could not reach that room.', true); });
       setTimeout(()=>{
@@ -619,13 +629,47 @@
       this.connected = true;
       this.reconnecting = false;
       this.reconnectAttempts = 0;
-      conn.on('data', (data)=>{ this.onData && this.onData(data); });
+      this._processedRids = new Set();
+      conn.on('data', (data)=>{
+        if(data && data._rid){
+          if(data.t==='_ack'){
+            // ack for a reliable message WE sent — stop resending it
+            const timer = this._pendingReliable[data._rid];
+            if(timer){ clearInterval(timer); delete this._pendingReliable[data._rid]; }
+            return;
+          }
+          // a reliable message from the other side — ack it immediately (every retry
+          // gets re-acked, that's fine and cheap), then drop it if we've already
+          // processed this exact id so a retransmit before the ack lands doesn't
+          // double-apply (e.g. joining twice, re-showing "opponent connected").
+          this.send({t:'_ack', _rid:data._rid});
+          if(this._processedRids.has(data._rid)) return;
+          this._processedRids.add(data._rid);
+          if(this._processedRids.size>300) this._processedRids.clear();
+        }
+        this.onData && this.onData(data);
+      });
       conn.on('close', ()=>{ this._onConnLost(); });
       conn.on('error', ()=>{ this._onConnLost(); });
       this.onOpen && this.onOpen();
     },
     send(msg){
       if(this.conn && this.conn.open){ try{ this.conn.send(msg); }catch(e){} }
+    },
+    // For the rare one-off messages that must actually arrive (hello / config / quit /
+    // rematch) — sends over the same unreliable channel but resends every 250ms until the
+    // other side acks it, up to 5s. The receiver dedupes by _rid so a message that arrives
+    // more than once (ack lost in transit, etc.) is only acted on the first time.
+    sendReliable(msg){
+      const id = 'r'+(++this._reliableSeq)+'_'+Math.random().toString(36).slice(2,7);
+      const payload = Object.assign({}, msg, {_rid:id});
+      const fire = ()=>{ this.send(payload); };
+      fire();
+      const timer = setInterval(fire, 250);
+      this._pendingReliable[id] = timer;
+      setTimeout(()=>{
+        if(this._pendingReliable[id]){ clearInterval(this._pendingReliable[id]); delete this._pendingReliable[id]; }
+      }, 5000);
     },
     _onConnLost(){
       if(!this.connected) return;
@@ -648,7 +692,7 @@
         if(this.reconnectAttempts>6){ this.reconnecting=false; this.onGiveUp && this.onGiveUp(); return; }
         this.onRetry && this.onRetry(this.reconnectAttempts);
         try{
-          const conn = this.peer.connect(this.hostPeerId, {reliable:true});
+          const conn = this.peer.connect(this.hostPeerId, {reliable:false});
           conn.on('open', ()=>{ this._attachConn(conn); });
         }catch(e){}
         setTimeout(()=>{ if(!this.connected) attempt(); }, 2500);
@@ -658,6 +702,9 @@
     teardown(){
       try{ if(this.conn) this.conn.close(); }catch(e){}
       try{ if(this.peer) this.peer.destroy(); }catch(e){}
+      Object.values(this._pendingReliable).forEach(t=>clearInterval(t));
+      this._pendingReliable = {};
+      this._processedRids = null;
       this.peer=null; this.conn=null; this.connected=false; this.isHost=false;
       this.roomCode=null; this.reconnecting=false; this.reconnectAttempts=0;
       this.onData=null; this.onOpen=null; this.onClose=null; this.onRetry=null; this.onGiveUp=null;
@@ -818,7 +865,7 @@
       if(isErr) joinConfirmBtn.disabled = false;
     });
     Net.onOpen = ()=>{
-      Net.send({t:'hello', name: myName});
+      Net.sendReliable({t:'hello', name: myName});
       setStatus(joinStatus, 'Connected \u2014 waiting for host to start the match\u2026', false, true);
     };
     Net.onClose = ()=>{
@@ -1064,9 +1111,15 @@
      PHYSICS (host-authoritative) — with continuous collision
   ========================================================= */
   let pendingEvents = [];
+  let recentEvents = []; // {ev, ticksLeft} — kept a few broadcasts past the tick that
+                          // created them, since state now travels over an unreliable channel
+                          // and a scoring/win event is too important to lose to one dropped
+                          // packet. The guest dedupes by ev.id so re-sending is harmless.
+  let eventSeq = 0;
   function queueEvent(kind, data){
-    const ev = Object.assign({kind}, data||{});
+    const ev = Object.assign({kind, id: ++eventSeq}, data||{});
     pendingEvents.push(ev);
+    recentEvents.push({ev, ticksLeft:4});
     applyLocalEventFx(ev); // host hears its own game live
   }
   // Runs identically on host (called live from queueEvent) and guest (called from received
@@ -1211,18 +1264,20 @@
     physicsSubstep();
   }
 
-  let lastSendTime = 0;
+  let lastSendTime = 0, stateSeq = 0;
   function broadcastState(force){
     const now = performance.now();
     if(!force && now-lastSendTime<16) return;
     lastSendTime = now;
+    recentEvents = recentEvents.filter(e=>{ e.ticksLeft--; return e.ticksLeft>=0; });
     Net.send({
       t:'state',
+      seq: ++stateSeq,
       ball:{x:ball.x,y:ball.y,vx:ball.vx,vy:ball.vy},
       paddleL:paddleL.center, paddleR:paddleR.center,
       scoreL, scoreR,
       serveTimer, serveReceiver,
-      events: pendingEvents
+      events: recentEvents.map(e=>e.ev)
     });
     pendingEvents = [];
   }
@@ -1230,8 +1285,15 @@
   /* =========================================================
      GUEST — receives snapshots, renders interpolated state
   ========================================================= */
-  let snapPrev=null, snapCur=null;
+  let snapPrev=null, snapCur=null, lastAppliedSeq=-1, seenEventIds=null;
   function onHostState(msg){
+    // The state channel is unreliable+unordered now (see Net._connectToHost), so a
+    // late-arriving old packet can show up after a newer one already has — seq guards
+    // against rendering it and stepping the ball backwards for a frame.
+    if(msg.seq!==undefined){
+      if(msg.seq<=lastAppliedSeq) return;
+      lastAppliedSeq = msg.seq;
+    }
     snapPrev = snapCur;
     snapCur = msg;
     snapCur._recvTime = performance.now();
@@ -1240,7 +1302,16 @@
     document.getElementById('scoreP1').textContent = scoreL;
     document.getElementById('scoreP2').textContent = scoreR;
     if(msg.events && msg.events.length){
+      if(!seenEventIds) seenEventIds = new Set();
       msg.events.forEach(ev=>{
+        // Each event is resent for a few broadcasts in a row (see recentEvents on the
+        // host) so a single dropped packet doesn't cost us a goal sound or the match-end
+        // signal — dedupe by id so we don't double-fire it once the redundant copy lands.
+        if(ev.id!==undefined){
+          if(seenEventIds.has(ev.id)) return;
+          seenEventIds.add(ev.id);
+          if(seenEventIds.size>300) seenEventIds.clear();
+        }
         applyLocalEventFx(ev);
         if(ev.kind==='matchWin'){ matchEnded = true; endGame(ev.winnerName, ev.loserName); }
       });
@@ -1534,7 +1605,7 @@
     lobbyScreen.style.display = 'block';
     showLobbyMenu();
     guestName = null; iAmHost = false; isLocalMatch = false;
-    snapPrev = null; snapCur = null; guestInputAngle = null;
+    snapPrev = null; snapCur = null; lastAppliedSeq = -1; seenEventIds = null; guestInputAngle = null;
   }
 
   function startMatchLocal(pl1, pl2, tScore, diff){
@@ -1555,7 +1626,7 @@
     DIFF = diff;
     wireInGameNet();
     commonMatchSetup(pl1, pl2, tScore);
-    Net.send({t:'config', p1:pl1, p2:pl2, targetScore:tScore, diff:diff});
+    Net.sendReliable({t:'config', p1:pl1, p2:pl2, targetScore:tScore, diff:diff});
   }
   function startMatchAsGuest(pl1, pl2, tScore, diff){
     DIFF = diff || DIFF;
@@ -1565,7 +1636,7 @@
   function hostStartRematch(){
     wireInGameNet();
     commonMatchSetup(p1, p2, targetScore);
-    Net.send({t:'config', p1, p2, targetScore, diff:DIFF});
+    Net.sendReliable({t:'config', p1, p2, targetScore, diff:DIFF});
   }
   function guestApplyRematch(msg){
     DIFF = msg.diff || DIFF;
@@ -1589,7 +1660,7 @@
   }
 
   document.getElementById('quitBtn').addEventListener('click', ()=>{
-    Net.send({t:'quit'});
+    Net.sendReliable({t:'quit'});
     matchEnded = true;
     cancelAnimationFrame(rafId);
     setTimeout(returnToLobby, 60); // give the reliable channel a moment to flush the quit message
@@ -1600,13 +1671,13 @@
     } else if(iAmHost){
       hostStartRematch();
     } else {
-      Net.send({t:'rematchRequest'});
+      Net.sendReliable({t:'rematchRequest'});
       e.target.disabled = true;
       e.target.textContent = 'WAITING FOR HOST\u2026';
     }
   });
   document.getElementById('menuBtn').addEventListener('click', ()=>{
-    Net.send({t:'quit'});
+    Net.sendReliable({t:'quit'});
     setTimeout(returnToLobby, 60);
   });
 
