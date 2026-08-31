@@ -1,0 +1,1625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>CIRCLE PONG — EO-174A ONLINE</title>
+<style>
+  :root{
+    --chassis-1:#2b2825;
+    --chassis-2:#141210;
+    --screen-bg:#071b10;
+    --phosphor:#59ffa0;
+    --phosphor-dim:#0f5c34;
+    --bezel-cream:#d9d3bf;
+    --bezel-cream-dark:#a89f86;
+    --amber:#ffb000;
+    --red-knob:#a33c2e;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;min-height:100vh;
+    background:
+      radial-gradient(ellipse at 50% 20%, rgba(255,225,180,0.06), transparent 55%),
+      repeating-linear-gradient(92deg, #3c2b1e 0px, #3c2b1e 3px, #35251a 3px, #35251a 6px),
+      linear-gradient(180deg, #1c140f, #0a0705 70%);
+    font-family:'Courier New',monospace;
+    color:var(--bezel-cream);
+    display:flex;align-items:flex-start;justify-content:center;
+    overflow-x:hidden;overflow-y:auto;
+    -webkit-text-size-adjust:100%;
+    touch-action:none;overscroll-behavior:none;
+    -webkit-overflow-scrolling:auto;
+  }
+  #app{
+    width:100%;max-width:620px;padding:18px;
+    margin:0 auto;
+    touch-action:none;overscroll-behavior:none;
+  }
+  .panel{
+    background:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 3px),
+      linear-gradient(180deg,var(--chassis-1),var(--chassis-2));
+    border-radius:14px;
+    padding:20px;
+    box-shadow:0 30px 60px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
+    border:1px solid #000;
+  }
+  .brand{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11px;letter-spacing:2px;color:var(--bezel-cream-dark);
+    margin-bottom:10px;text-transform:uppercase;
+  }
+  .brand b{color:var(--amber);font-size:13px;letter-spacing:3px;}
+
+  .screen-wrap{
+    position:relative;
+    background:linear-gradient(180deg,#4a4640,#2a2723);
+    border-radius:50%;
+    padding:14px;
+    box-shadow:inset 0 0 0 3px #050403, inset 0 0 30px rgba(0,0,0,.7);
+  }
+  canvas{
+    display:block;border-radius:50%;background:var(--screen-bg);
+    box-shadow:inset 0 0 40px rgba(0,0,0,.85), inset 0 0 8px #000;
+    width:100%;height:auto;
+  }
+  .crt{position:relative;border-radius:50%;overflow:hidden;}
+  .crt-vignette{
+    position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle at 50% 50%, transparent 52%, rgba(0,0,0,0.35) 85%, rgba(0,0,0,0.7) 100%);
+  }
+  .crt-scanlines{
+    position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    background:repeating-linear-gradient(180deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode:multiply;opacity:.55;
+  }
+  .crt-reflection{
+    position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    background:linear-gradient(118deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 18%, transparent 38%, transparent 72%, rgba(255,255,255,0.05) 100%);
+  }
+  .screw{
+    position:absolute;width:9px;height:9px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #888,#222);
+  }
+  .screw.tl{top:8px;left:8px;} .screw.tr{top:8px;right:8px;}
+  .screw.bl{bottom:8px;left:8px;} .screw.br{bottom:8px;right:8px;}
+
+  .readout-row{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-top:14px;gap:12px;
+  }
+  .led{
+    background:#050705;border-radius:6px;padding:8px 14px;
+    box-shadow:inset 0 0 8px #000;flex:1;text-align:center;
+    border:1px solid #000;
+  }
+  .led .name{font-size:10px;letter-spacing:2px;color:var(--bezel-cream-dark);margin-bottom:3px;}
+  .led .score{font-size:26px;color:var(--amber);text-shadow:0 0 8px rgba(255,176,0,.6);letter-spacing:2px;}
+  .led.pulse{animation:ledPulse .5s ease;}
+  @keyframes ledPulse{
+    0%{transform:scale(1);box-shadow:inset 0 0 8px #000;}
+    30%{transform:scale(1.14);box-shadow:0 0 20px rgba(255,176,0,.85), inset 0 0 8px #000;}
+    100%{transform:scale(1);box-shadow:inset 0 0 8px #000;}
+  }
+
+  .controls-row{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-top:16px;gap:14px;flex-wrap:wrap;
+  }
+  .knob-group{display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .knob-label{font-size:9px;letter-spacing:1.5px;color:var(--bezel-cream-dark);}
+  .knob{
+    width:46px;height:46px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #efe8d4, var(--bezel-cream) 55%, var(--bezel-cream-dark));
+    box-shadow:0 3px 0 #6b644f, inset 0 -2px 4px rgba(0,0,0,.2);
+    position:relative;cursor:pointer;user-select:none;
+  }
+  .knob::after{
+    content:'';position:absolute;top:5px;left:50%;width:3px;height:14px;
+    background:#5a5340;transform:translateX(-50%);border-radius:2px;
+  }
+  .knob-value{font-size:12px;color:var(--amber);margin-top:2px;letter-spacing:1px;}
+  .knob.locked{cursor:default;opacity:.55;filter:grayscale(.4);}
+
+  input[type=text]{
+    background:#050705;border:1px solid #3a352c;color:var(--phosphor);
+    font-family:inherit;font-size:13px;padding:7px 9px;border-radius:4px;
+    width:120px;letter-spacing:1px;text-transform:uppercase;
+  }
+  input[type=text]:focus{outline:1px solid var(--amber);}
+
+  .btn{
+    background:linear-gradient(180deg,#8a2f22,var(--red-knob));
+    color:#f4e9d8;border:none;border-radius:6px;padding:11px 22px;
+    font-family:inherit;font-size:13px;letter-spacing:2px;cursor:pointer;
+    box-shadow:0 3px 0 #5c1e15, inset 0 1px 0 rgba(255,255,255,.15);
+    text-transform:uppercase;
+  }
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 #5c1e15;}
+  .btn.ghost{
+    background:linear-gradient(180deg,#3a352c,#221f1a);
+    box-shadow:0 3px 0 #100e0b, inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .btn:disabled{opacity:.4;cursor:default;transform:none;box-shadow:0 3px 0 #100e0b;}
+
+  #lobby-screen, #gameover-screen{text-align:center;}
+  #lobby-screen h1{
+    font-size:19px;letter-spacing:3px;color:var(--phosphor);
+    text-shadow:0 0 10px rgba(89,255,160,.5);margin:4px 0 4px;
+  }
+  #lobby-screen p.sub{font-size:11px;color:var(--bezel-cream-dark);letter-spacing:1px;margin-bottom:18px;}
+  .name-row{display:flex;justify-content:center;gap:16px;margin-bottom:18px;flex-wrap:wrap;}
+  .name-field{display:flex;flex-direction:column;gap:5px;align-items:flex-start;}
+  .name-field label{font-size:9px;letter-spacing:1.5px;color:var(--bezel-cream-dark);}
+
+  .hint{font-size:10px;color:var(--bezel-cream-dark);margin-top:16px;letter-spacing:.5px;line-height:1.6;}
+  .hint b{color:var(--phosphor);}
+
+  #gameover-screen .result{font-size:22px;letter-spacing:2px;margin:8px 0 2px;text-shadow:0 0 10px currentColor;}
+  #gameover-screen .win{color:var(--phosphor);}
+  #gameover-screen .lose{color:#7a7268;font-size:13px;}
+  .fame{margin-top:16px;text-align:left;background:#050705;border-radius:6px;padding:10px 14px;font-size:11px;}
+  .fame-title{color:var(--amber);letter-spacing:2px;font-size:10px;margin-bottom:6px;}
+  .fame-row{display:flex;justify-content:space-between;color:var(--bezel-cream-dark);padding:2px 0;}
+  .fame-row b{color:var(--phosphor);}
+  .fame-row{align-items:center;}
+  .fame-del{
+    background:none;border:1px solid #3a352c;color:#a06a5c;
+    border-radius:4px;width:18px;height:18px;line-height:1;
+    font-size:11px;cursor:pointer;margin-left:8px;padding:0;
+  }
+  .fame-del:hover{border-color:#a06a5c;}
+  .fame-clear{
+    margin-top:8px;font-size:9px;letter-spacing:1.5px;padding:6px 10px;
+  }
+  .fame-note{font-size:9px;color:#5a5346;margin-top:6px;}
+  .row-btns{display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap;}
+
+  #game-screen{display:none;}
+  .touch-row{display:none;justify-content:space-between;margin-top:10px;gap:8px;}
+  .touch-pad{
+    flex:1;height:120px;border-radius:10px;
+    background:linear-gradient(180deg,#151210,#0a0806);
+    border:1px solid #2f2a23;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    font-size:10px;color:#6b6152;letter-spacing:1.5px;
+    touch-action:none;overscroll-behavior:none;user-select:none;-webkit-user-select:none;
+    position:relative;overflow:hidden;
+  }
+  .touch-pad .tp-arrow{font-size:16px;color:var(--phosphor);opacity:.6;}
+  .touch-pad .tp-label{color:var(--amber);font-size:11px;}
+  .touch-pad.active{border-color:var(--phosphor);box-shadow:inset 0 0 14px rgba(89,255,160,.15);}
+  .touch-pad.opponent-pad{pointer-events:none;opacity:.4;}
+  .touch-pad.opponent-pad .tp-arrow{opacity:.25;}
+  @media (max-width:640px){ .touch-row{display:flex;} }
+  @media (pointer:coarse){ .touch-row{display:flex;} }
+
+  /* ---- lobby / networking additions ---- */
+  .code-box{
+    margin-top:18px;background:#050705;border-radius:8px;padding:14px;
+    box-shadow:inset 0 0 8px #000;border:1px solid #000;
+  }
+  .code-label{font-size:9px;letter-spacing:2px;color:var(--bezel-cream-dark);margin-bottom:6px;}
+  .code-letters{
+    font-size:34px;letter-spacing:10px;color:var(--phosphor);
+    text-shadow:0 0 14px rgba(89,255,160,.6);margin-bottom:10px;
+  }
+  .status-line{font-size:11px;color:var(--amber);letter-spacing:1px;margin-top:12px;min-height:14px;}
+  .status-line.err{color:#e07a5c;}
+  .status-line.ok{color:var(--phosphor);}
+  #join-panel input[type=text]{width:100px;text-align:center;font-size:20px;letter-spacing:6px;}
+  .conn-status{
+    font-size:10px;letter-spacing:1.5px;text-align:center;margin-bottom:6px;
+    color:var(--phosphor);text-shadow:0 0 6px rgba(89,255,160,.5);
+  }
+  .conn-status.warn{color:var(--amber);text-shadow:0 0 6px rgba(255,176,0,.5);animation:blinkwarn 1s infinite;}
+  .conn-status.bad{color:#e07a5c;text-shadow:none;}
+  @keyframes blinkwarn{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  #reconnect-overlay{
+    display:none;position:absolute;inset:14px;border-radius:50%;
+    background:rgba(5,7,5,.82);color:var(--amber);z-index:5;
+    flex-direction:column;align-items:center;justify-content:center;
+    font-size:11px;letter-spacing:1.5px;text-align:center;gap:10px;padding:20px;
+  }
+  #reconnect-overlay b{color:var(--phosphor);font-size:13px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="panel">
+    <div class="brand"><span>EO&#8209;174A · WAVE TENNIS SIM</span><b>CIRCLE PONG ONLINE</b></div>
+
+    <!-- LOBBY SCREEN -->
+    <div id="lobby-screen">
+      <h1>CIRCLE PONG</h1>
+      <p class="sub">a round-screen tennis game, in the spirit of 1958 — now online</p>
+
+      <div class="name-row">
+        <div class="name-field" style="align-items:center;margin:0 auto;">
+          <label>YOUR NAME</label>
+          <input type="text" id="myName" maxlength="10" placeholder="PLAYER">
+        </div>
+      </div>
+
+      <div id="lobby-menu" class="row-btns">
+        <button class="btn" id="createBtn">CREATE MATCH</button>
+        <button class="btn ghost" id="joinBtn">JOIN MATCH</button>
+        <button class="btn ghost" id="localBtn">LOCAL MATCH</button>
+      </div>
+      <div class="row-btns" id="fameRow">
+        <button class="btn ghost" id="fameBtn">HALL OF FAME</button>
+      </div>
+
+      <!-- CREATE PANEL -->
+      <div id="create-panel" style="display:none;">
+        <div class="controls-row" style="justify-content:center;">
+          <div class="knob-group">
+            <span class="knob-label">POINTS TO WIN</span>
+            <div class="knob" id="ptsKnob"></div>
+            <span class="knob-value" id="ptsVal">5</span>
+          </div>
+          <div class="knob-group">
+            <span class="knob-label">DIFFICULTY</span>
+            <div class="knob" id="diffKnob"></div>
+            <span class="knob-value" id="diffVal">NORMAL</span>
+          </div>
+        </div>
+        <div class="code-box">
+          <div class="code-label">ROOM CODE</div>
+          <div class="code-letters" id="roomCodeDisplay">----</div>
+          <div class="row-btns" style="margin-top:0;">
+            <button class="btn ghost" id="tgShareBtn" style="display:none;">SHARE ON TELEGRAM</button>
+            <button class="btn ghost" id="copyLinkBtn">COPY INVITE LINK</button>
+          </div>
+        </div>
+        <div class="status-line" id="createStatus">Generating room&hellip;</div>
+        <div class="row-btns">
+          <button class="btn" id="hostStartBtn" disabled>START MATCH</button>
+          <button class="btn ghost" id="cancelCreateBtn">CANCEL</button>
+        </div>
+      </div>
+
+      <!-- JOIN PANEL -->
+      <div id="join-panel" style="display:none;">
+        <div class="name-field" style="align-items:center;margin:0 auto 6px;">
+          <label>ROOM CODE</label>
+          <input type="text" id="joinCodeInput" maxlength="4" placeholder="ABCD">
+        </div>
+        <div class="row-btns">
+          <button class="btn" id="joinConfirmBtn">JOIN</button>
+          <button class="btn ghost" id="cancelJoinBtn">CANCEL</button>
+        </div>
+        <div class="status-line" id="joinStatus"></div>
+      </div>
+
+      <!-- LOCAL PANEL -->
+      <div id="local-panel" style="display:none;">
+        <div class="name-row">
+          <div class="name-field">
+            <label>PLAYER 1 (W/S)</label>
+            <input type="text" id="localP1Name" maxlength="10" placeholder="PLAYER 1">
+          </div>
+          <div class="name-field">
+            <label>PLAYER 2 (&uarr;/&darr;)</label>
+            <input type="text" id="localP2Name" maxlength="10" placeholder="PLAYER 2">
+          </div>
+        </div>
+        <div class="controls-row" style="justify-content:center;">
+          <div class="knob-group">
+            <span class="knob-label">POINTS TO WIN</span>
+            <div class="knob" id="ptsKnobLocal"></div>
+            <span class="knob-value" id="ptsValLocal">5</span>
+          </div>
+          <div class="knob-group">
+            <span class="knob-label">DIFFICULTY</span>
+            <div class="knob" id="diffKnobLocal"></div>
+            <span class="knob-value" id="diffValLocal">NORMAL</span>
+          </div>
+        </div>
+        <div class="row-btns">
+          <button class="btn" id="localStartBtn">START MATCH</button>
+          <button class="btn ghost" id="cancelLocalBtn">CANCEL</button>
+        </div>
+      </div>
+
+      <div class="hint">Ball orbits the wall &mdash; cover your <b>green arc</b> with your paddle to return it.<br>Host sets the rules. First to target score wins.</div>
+      <div class="fame" id="startFame" style="display:none;"></div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen">
+      <div class="conn-status" id="connStatus">&#9679; LIVE</div>
+      <div class="screen-wrap">
+        <div class="crt">
+          <canvas id="cv" width="560" height="560"></canvas>
+          <div class="crt-vignette"></div>
+          <div class="crt-scanlines"></div>
+          <div class="crt-reflection"></div>
+          <div id="reconnect-overlay"><b id="reconnectTitle">CONNECTION LOST</b><span id="reconnectMsg">Attempting to reconnect&hellip;</span><button class="btn ghost" id="tryReconnectBtn" style="margin-top:4px;">TRY RECONNECTING</button></div>
+        </div>
+        <div class="screw tl"></div><div class="screw tr"></div>
+        <div class="screw bl"></div><div class="screw br"></div>
+      </div>
+      <div class="readout-row">
+        <div class="led"><div class="name" id="lblP1">P1</div><div class="score" id="scoreP1">0</div></div>
+        <div class="led" style="max-width:78px;"><div class="name">TARGET</div><div class="score" id="scoreTarget">5</div></div>
+        <div class="led" style="max-width:78px;"><div class="name">SPEED</div><div class="score" id="scoreSpeed" style="font-size:18px;">1.0x</div></div>
+        <div class="led"><div class="name" id="lblP2">P2</div><div class="score" id="scoreP2">0</div></div>
+      </div>
+      <div class="touch-row">
+        <div class="touch-pad" id="padL">
+          <span class="tp-arrow">&#9650;</span>
+          <span class="tp-label" id="tpLabelL">P1</span>
+          <span class="tp-arrow">&#9660;</span>
+        </div>
+        <div class="touch-pad" id="padR">
+          <span class="tp-arrow">&#9650;</span>
+          <span class="tp-label" id="tpLabelR">P2</span>
+          <span class="tp-arrow">&#9660;</span>
+        </div>
+      </div>
+      <div class="controls-row" style="justify-content:center;">
+        <button class="btn ghost" id="quitBtn">QUIT MATCH</button>
+      </div>
+    </div>
+
+    <!-- GAME OVER -->
+    <div id="gameover-screen" style="display:none;">
+      <div class="result win" id="winnerLine">WINNER</div>
+      <div class="result lose" id="loserLine">loser</div>
+      <div class="fame" id="fameBox"></div>
+      <div class="row-btns">
+        <button class="btn" id="rematchBtn">REMATCH</button>
+        <button class="btn ghost" id="menuBtn">MAIN MENU</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script>
+(function(){
+  /* =========================================================
+     TELEGRAM MINI APP BOOTSTRAP
+  ========================================================= */
+  const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+  if(TG){
+    try{ TG.ready(); }catch(e){}
+    try{ TG.expand(); }catch(e){}
+    try{ TG.disableVerticalSwipes(); }catch(e){}
+    try{ TG.setBackgroundColor && TG.setBackgroundColor('#0a0705'); }catch(e){}
+    try{ TG.setHeaderColor && TG.setHeaderColor('#141210'); }catch(e){}
+  }
+  // Replace these with your bot's @username and the Mini App's short name
+  // (as registered with @BotFather) to enable deep-link invites via Telegram.
+  const TG_BOT_USERNAME = 'YourBotUsername';
+  const TG_APP_SHORT_NAME = 'circlepong';
+  function tgAppLink(code){
+    return 'https://t.me/'+TG_BOT_USERNAME+'/'+TG_APP_SHORT_NAME+'?startapp='+code;
+  }
+  const lobbyScreen = document.getElementById('lobby-screen');
+  const gameScreen = document.getElementById('game-screen');
+  const overScreen = document.getElementById('gameover-screen');
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+
+  /* =========================================================
+     AUDIO — zero-dependency Web Audio oscillator SFX
+  ========================================================= */
+  let actx = null;
+  function ensureAudio(){
+    if(!actx){
+      try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; }
+    }
+    if(actx.state==='suspended'){
+      actx.resume().then(unbindAudioUnlockListeners).catch(()=>{});
+    } else {
+      unbindAudioUnlockListeners();
+    }
+    return actx;
+  }
+  // Some browsers only allow resume() to take effect inside the call stack of a genuine
+  // user gesture (a native click/tap/keypress) — not a gesture relayed indirectly through
+  // a WebRTC data-channel "open" event. So we keep re-attempting ensureAudio() on every
+  // real pointerdown/keydown/touchstart/click (host AND guest) until the context actually
+  // reports "running", then unbind. This is deliberately NOT a one-shot {once:true}
+  // listener, since a single early attempt can fire before the resume() promise settles.
+  const AUDIO_UNLOCK_EVENTS = ['pointerdown','keydown','touchstart','click'];
+  function unbindAudioUnlockListeners(){
+    if(!actx || actx.state!=='running') return;
+    AUDIO_UNLOCK_EVENTS.forEach(evt=>{
+      document.removeEventListener(evt, ensureAudio, true);
+    });
+  }
+  AUDIO_UNLOCK_EVENTS.forEach(evt=>{
+    document.addEventListener(evt, ensureAudio, {capture:true});
+  });
+  function beep(freq, dur, type, vol){
+    const ac = ensureAudio();
+    if(!ac) return;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = type||'sine';
+    osc.frequency.setValueAtTime(freq, ac.currentTime);
+    gain.gain.setValueAtTime(vol||0.18, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+dur);
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.start();
+    osc.stop(ac.currentTime+dur+0.02);
+  }
+  const sfx = {
+    paddleHit(){ beep(600, 0.08, 'square', 0.14); },
+    wallBounce(){ beep(300, 0.12, 'triangle', 0.14); },
+    score(){ beep(150, 0.4, 'sawtooth', 0.2); },
+    matchWin(){
+      [523,659,784,1047].forEach((f,i)=>{
+        setTimeout(()=>beep(f, 0.2, 'square', 0.16), i*140);
+      });
+    }
+  };
+  /* =========================================================
+     LOCAL HALL OF FAME — localStorage (per-device)
+  ========================================================= */
+  const LB_KEY = 'circlepong:leaderboard';
+  function loadLeaderboard(){
+    try{ const raw = localStorage.getItem(LB_KEY); return raw?JSON.parse(raw):[]; }catch(e){ return []; }
+  }
+  function saveLeaderboard(list){
+    try{ localStorage.setItem(LB_KEY, JSON.stringify(list)); }catch(e){}
+  }
+  function recordWin(name){
+    const list = loadLeaderboard();
+    const entry = list.find(x=>x.name===name);
+    if(entry) entry.wins++; else list.push({name, wins:1});
+    list.sort((a,b)=>b.wins-a.wins);
+    const trimmed = list.slice(0,10);
+    saveLeaderboard(trimmed);
+    return trimmed;
+  }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function renderFame(list, el){
+    let html = '<div class="fame-title">HALL OF FAME</div>';
+    if(!list.length){
+      html += '<div class="fame-row">No matches recorded yet.</div>';
+    } else {
+      list.slice(0,10).forEach((e)=>{
+        html += '<div class="fame-row"><span>'+escapeHtml(e.name)+'</span>'
+              + '<span style="display:flex;align-items:center;"><b>'+e.wins+' win'+(e.wins===1?'':'s')+'</b>'
+              + '<button class="fame-del" data-name="'+escapeHtml(e.name)+'" title="Remove">&times;</button></span></div>';
+      });
+    }
+    html += '<button class="btn ghost fame-clear" data-clear="1">CLEAR ALL SCORES</button>';
+    html += '<div class="fame-note">Local Hall of Fame &mdash; stored only on this device.</div>';
+    el.innerHTML = html;
+    el.querySelectorAll('.fame-del').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const list2 = loadLeaderboard().filter(x=>x.name!==btn.dataset.name);
+        saveLeaderboard(list2);
+        renderFame(list2, el);
+      });
+    });
+    const clearBtn = el.querySelector('[data-clear]');
+    if(clearBtn){
+      clearBtn.addEventListener('click', ()=>{
+        saveLeaderboard([]);
+        renderFame([], el);
+      });
+    }
+  }
+  document.getElementById('fameBtn').addEventListener('click', ()=>{
+    const el = document.getElementById('startFame');
+    el.style.display = 'block';
+    renderFame(loadLeaderboard(), el);
+  });
+
+  /* =========================================================
+     LOBBY KNOBS (host-only match settings)
+  ========================================================= */
+  const ptsOptions = [3,5,7];
+  let ptsIndex = 1;
+  const ptsKnob = document.getElementById('ptsKnob');
+  const ptsVal = document.getElementById('ptsVal');
+  function renderKnob(){
+    ptsVal.textContent = ptsOptions[ptsIndex];
+    ptsKnob.style.transform = 'rotate('+(-60+ptsIndex*60)+'deg)';
+  }
+  ptsKnob.addEventListener('click', ()=>{ ptsIndex=(ptsIndex+1)%ptsOptions.length; renderKnob(); });
+  renderKnob();
+
+  // NORMAL ramps to its cap fast (short rallies feel snappy); EXPERT starts faster and has
+  // no real ceiling — it keeps climbing the longer a rally runs. paddleHalf is per-difficulty
+  // so NORMAL gets a slightly bigger paddle than EXPERT (drawn AND collision — see drawArc/checkBoundary).
+  // kick = raw per-difficulty multiplier on paddle swing speed; kickCapFactor bounds how much
+  // of the ball's CURRENT speed a single swing can add, so a hard flick can't inject a
+  // multi-hundred-unit spike in one hit — it scales with the rally instead of against it.
+  const diffOptions = [
+    { label:'NORMAL', base:6, max:12,      growth:1.08,  curve:0.12, paddleHalf: Math.PI*0.095, kick:34, kickCapFactor:0.65 },
+    { label:'EXPERT', base:7, max:Infinity, growth:1.055, curve:0.20, paddleHalf: Math.PI*0.08,  kick:46, kickCapFactor:0.85 },
+  ];
+  let diffIndex = 0;
+  const diffKnob = document.getElementById('diffKnob');
+  const diffVal = document.getElementById('diffVal');
+  function renderDiffKnob(){
+    diffVal.textContent = diffOptions[diffIndex].label;
+    diffKnob.style.transform = 'rotate('+(-30+diffIndex*60)+'deg)';
+  }
+  diffKnob.addEventListener('click', ()=>{ diffIndex=(diffIndex+1)%diffOptions.length; renderDiffKnob(); });
+  renderDiffKnob();
+
+  /* =========================================================
+     NETWORKING — PeerJS WebRTC data channel, host-authoritative
+  ========================================================= */
+  const Net = {
+    peer:null, conn:null, isHost:false, roomCode:null, hostPeerId:null,
+    connected:false, reconnecting:false, reconnectAttempts:0,
+    onData:null, onOpen:null, onClose:null, onRetry:null, onGiveUp:null,
+    makeId(code){ return 'circlepong-eo174a-'+code; },
+    randomCode(){
+      const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O — avoids confusion
+      let s=''; for(let i=0;i<4;i++) s += letters[Math.floor(Math.random()*letters.length)];
+      return s;
+    },
+    createRoom(onCode, onStatus, attemptsLeft){
+      attemptsLeft = attemptsLeft===undefined?5:attemptsLeft;
+      this.isHost = true;
+      const code = this.randomCode();
+      const id = this.makeId(code);
+      let settled = false;
+      let peer;
+      try{ peer = new Peer(id, {debug:0}); }
+      catch(e){ onStatus('Could not start networking. Check your connection.'); return; }
+      peer.on('open', ()=>{
+        settled = true;
+        this.peer = peer;
+        this.roomCode = code;
+        onCode(code);
+      });
+      peer.on('error', (err)=>{
+        if(!settled){
+          try{ peer.destroy(); }catch(e){}
+          if(attemptsLeft>0){ this.createRoom(onCode, onStatus, attemptsLeft-1); }
+          else{ onStatus('Could not create a room. Please try again.', true); }
+        } else {
+          this._handleLatePeerError(err);
+        }
+      });
+      peer.on('connection', (conn)=>{ this._attachConn(conn); });
+      peer.on('disconnected', ()=>{ this._onPeerDisconnected(); });
+    },
+    joinRoom(code, onStatus){
+      this.isHost = false;
+      this.roomCode = code;
+      this.hostPeerId = this.makeId(code);
+      let peer;
+      try{ peer = new Peer({debug:0}); }
+      catch(e){ onStatus('Could not start networking. Check your connection.', true); return; }
+      peer.on('open', ()=>{
+        this.peer = peer;
+        this._connectToHost(onStatus);
+      });
+      peer.on('error', (err)=>{
+        onStatus('Connection error: '+(err && err.type ? err.type : 'unknown'), true);
+      });
+      peer.on('disconnected', ()=>{ this._onPeerDisconnected(); });
+    },
+    _connectToHost(onStatus){
+      let resolved = false;
+      const conn = this.peer.connect(this.hostPeerId, {reliable:true});
+      conn.on('open', ()=>{ resolved = true; this._attachConn(conn); onStatus && onStatus('Connected!', false, true); });
+      conn.on('error', ()=>{ if(!resolved) onStatus && onStatus('Could not reach that room.', true); });
+      setTimeout(()=>{
+        if(!resolved && !this.connected){ onStatus && onStatus('Room not found. Check the code and try again.', true); }
+      }, 9000);
+    },
+    _attachConn(conn){
+      this.conn = conn;
+      this.connected = true;
+      this.reconnecting = false;
+      this.reconnectAttempts = 0;
+      conn.on('data', (data)=>{ this.onData && this.onData(data); });
+      conn.on('close', ()=>{ this._onConnLost(); });
+      conn.on('error', ()=>{ this._onConnLost(); });
+      this.onOpen && this.onOpen();
+    },
+    send(msg){
+      if(this.conn && this.conn.open){ try{ this.conn.send(msg); }catch(e){} }
+    },
+    _onConnLost(){
+      if(!this.connected) return;
+      this.connected = false;
+      this.onClose && this.onClose();
+      if(!this.isHost){ this._attemptReconnect(); }
+      // host: just keeps listening on peer.on('connection') for the guest to come back
+    },
+    _onPeerDisconnected(){
+      if(this.peer && !this.peer.destroyed){ try{ this.peer.reconnect(); }catch(e){} }
+    },
+    _handleLatePeerError(){ /* non-fatal signalling hiccup after room is live */ },
+    _attemptReconnect(){
+      if(this.reconnecting) return;
+      this.reconnecting = true;
+      this.reconnectAttempts = 0;
+      const attempt = ()=>{
+        if(this.connected || !this.reconnecting) return;
+        this.reconnectAttempts++;
+        if(this.reconnectAttempts>6){ this.reconnecting=false; this.onGiveUp && this.onGiveUp(); return; }
+        this.onRetry && this.onRetry(this.reconnectAttempts);
+        try{
+          const conn = this.peer.connect(this.hostPeerId, {reliable:true});
+          conn.on('open', ()=>{ this._attachConn(conn); });
+        }catch(e){}
+        setTimeout(()=>{ if(!this.connected) attempt(); }, 2500);
+      };
+      attempt();
+    },
+    teardown(){
+      try{ if(this.conn) this.conn.close(); }catch(e){}
+      try{ if(this.peer) this.peer.destroy(); }catch(e){}
+      this.peer=null; this.conn=null; this.connected=false; this.isHost=false;
+      this.roomCode=null; this.reconnecting=false; this.reconnectAttempts=0;
+      this.onData=null; this.onOpen=null; this.onClose=null; this.onRetry=null; this.onGiveUp=null;
+    }
+  };
+
+  /* =========================================================
+     LOBBY UI WIRING
+  ========================================================= */
+  const myNameInput = document.getElementById('myName');
+  const tgShareBtn = document.getElementById('tgShareBtn');
+
+  // Auto-populate the name field from the Telegram user profile, if available.
+  (function fillTelegramName(){
+    if(!TG) return;
+    const u = TG.initDataUnsafe && TG.initDataUnsafe.user;
+    if(!u) return;
+    const name = (u.first_name || u.username || '').toUpperCase().slice(0,10);
+    if(name) myNameInput.value = name;
+  })();
+  const createBtn = document.getElementById('createBtn');
+  const joinBtn = document.getElementById('joinBtn');
+  const createPanel = document.getElementById('create-panel');
+  const joinPanel = document.getElementById('join-panel');
+  const lobbyMenu = document.getElementById('lobby-menu');
+  const fameRow = document.getElementById('fameRow');
+  const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+  const createStatus = document.getElementById('createStatus');
+  const hostStartBtn = document.getElementById('hostStartBtn');
+  const copyLinkBtn = document.getElementById('copyLinkBtn');
+  const cancelCreateBtn = document.getElementById('cancelCreateBtn');
+  const joinCodeInput = document.getElementById('joinCodeInput');
+  const joinConfirmBtn = document.getElementById('joinConfirmBtn');
+  const cancelJoinBtn = document.getElementById('cancelJoinBtn');
+  const joinStatus = document.getElementById('joinStatus');
+  const localBtn = document.getElementById('localBtn');
+  const localPanel = document.getElementById('local-panel');
+  const localP1Name = document.getElementById('localP1Name');
+  const localP2Name = document.getElementById('localP2Name');
+  const localStartBtn = document.getElementById('localStartBtn');
+  const cancelLocalBtn = document.getElementById('cancelLocalBtn');
+
+  let myName = 'PLAYER';
+  let guestName = null;
+  let iAmHost = false;
+  let isLocalMatch = false;
+
+  function setStatus(el, text, isErr, isOk){
+    el.textContent = text;
+    el.classList.toggle('err', !!isErr);
+    el.classList.toggle('ok', !!isOk);
+  }
+
+  function showLobbyMenu(){
+    lobbyMenu.style.display = 'flex';
+    fameRow.style.display = 'flex';
+    createPanel.style.display = 'none';
+    joinPanel.style.display = 'none';
+    localPanel.style.display = 'none';
+  }
+  showLobbyMenu();
+
+  createBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    myName = (myNameInput.value||'PLAYER').toUpperCase().slice(0,10);
+    lobbyMenu.style.display = 'none';
+    fameRow.style.display = 'none';
+    createPanel.style.display = 'block';
+    hostStartBtn.disabled = true;
+    roomCodeDisplay.textContent = '----';
+    setStatus(createStatus, 'Generating room\u2026');
+    tgShareBtn.style.display = 'none';
+    Net.createRoom(
+      (code)=>{
+        roomCodeDisplay.textContent = code;
+        setStatus(createStatus, 'Waiting for an opponent to join\u2026');
+        if(TG) tgShareBtn.style.display = 'inline-block';
+      },
+      (msg, isErr)=>{ setStatus(createStatus, msg, isErr); }
+    );
+    Net.onOpen = ()=>{
+      // a guest's data channel just opened — wait for their 'hello' to learn their name
+    };
+    Net.onClose = ()=>{
+      guestName = null;
+      hostStartBtn.disabled = true;
+      setStatus(createStatus, 'Opponent disconnected. Waiting for an opponent to join\u2026', true);
+    };
+    Net.onData = (msg)=>{
+      if(msg.t==='hello'){
+        guestName = (msg.name||'PLAYER 2').toUpperCase().slice(0,10);
+        hostStartBtn.disabled = false;
+        setStatus(createStatus, guestName+' connected. Ready to start!', false, true);
+      }
+    };
+  });
+
+  tgShareBtn.addEventListener('click', ()=>{
+    if(!Net.roomCode || !TG) return;
+    const deepLink = tgAppLink(Net.roomCode);
+    const shareUrl = 'https://t.me/share/url?url=' + encodeURIComponent(deepLink)
+      + '&text=' + encodeURIComponent('Play Circle Pong with me!');
+    if(TG.openTelegramLink){
+      TG.openTelegramLink(shareUrl);
+    } else {
+      window.open(shareUrl, '_blank');
+    }
+  });
+
+  // Fallback clipboard copy — used inside Telegram too (copies the deep link when
+  // available) and as the primary invite method in plain, non-Telegram browsers.
+  copyLinkBtn.addEventListener('click', ()=>{
+    if(!Net.roomCode) return;
+    const url = TG ? tgAppLink(Net.roomCode) : (location.origin + location.pathname + '?room=' + Net.roomCode);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(()=>{
+        setStatus(createStatus, 'Invite link copied to clipboard!', false, true);
+      }).catch(()=>{ window.prompt('Copy this link:', url); });
+    } else {
+      window.prompt('Copy this link:', url);
+    }
+  });
+
+  cancelCreateBtn.addEventListener('click', ()=>{
+    Net.teardown();
+    showLobbyMenu();
+  });
+
+  hostStartBtn.addEventListener('click', ()=>{
+    if(!guestName) return;
+    iAmHost = true;
+    DIFF = diffOptions[diffIndex];
+    const targetScore = ptsOptions[ptsIndex];
+    startMatchAsHost(myName, guestName, targetScore, DIFF);
+  });
+
+  joinBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    myName = (myNameInput.value||'PLAYER').toUpperCase().slice(0,10);
+    lobbyMenu.style.display = 'none';
+    fameRow.style.display = 'none';
+    joinPanel.style.display = 'block';
+    setStatus(joinStatus, '');
+  });
+
+  cancelJoinBtn.addEventListener('click', ()=>{
+    Net.teardown();
+    showLobbyMenu();
+  });
+
+  joinConfirmBtn.addEventListener('click', ()=>{
+    const code = (joinCodeInput.value||'').toUpperCase().trim();
+    if(code.length!==4){ setStatus(joinStatus, 'Enter the 4-letter room code.', true); return; }
+    joinConfirmBtn.disabled = true;
+    setStatus(joinStatus, 'Connecting\u2026');
+    Net.joinRoom(code, (msg, isErr, isOk)=>{
+      setStatus(joinStatus, msg, isErr, isOk);
+      if(isErr) joinConfirmBtn.disabled = false;
+    });
+    Net.onOpen = ()=>{
+      Net.send({t:'hello', name: myName});
+      setStatus(joinStatus, 'Connected \u2014 waiting for host to start the match\u2026', false, true);
+    };
+    Net.onClose = ()=>{
+      setStatus(joinStatus, 'Lost connection to host.', true);
+      joinConfirmBtn.disabled = false;
+    };
+    Net.onData = (msg)=>{
+      if(msg.t==='config'){
+        iAmHost = false;
+        startMatchAsGuest(msg.p1, msg.p2, msg.targetScore, msg.diff);
+      }
+    };
+  });
+
+  /* ---- LOCAL MATCH (no PeerJS networking at all) ---- */
+  let ptsIndexLocal = 1;
+  const ptsKnobLocal = document.getElementById('ptsKnobLocal');
+  const ptsValLocal = document.getElementById('ptsValLocal');
+  function renderKnobLocal(){
+    ptsValLocal.textContent = ptsOptions[ptsIndexLocal];
+    ptsKnobLocal.style.transform = 'rotate('+(-60+ptsIndexLocal*60)+'deg)';
+  }
+  ptsKnobLocal.addEventListener('click', ()=>{ ptsIndexLocal=(ptsIndexLocal+1)%ptsOptions.length; renderKnobLocal(); });
+  renderKnobLocal();
+
+  let diffIndexLocal = 0;
+  const diffKnobLocal = document.getElementById('diffKnobLocal');
+  const diffValLocal = document.getElementById('diffValLocal');
+  function renderDiffKnobLocal(){
+    diffValLocal.textContent = diffOptions[diffIndexLocal].label;
+    diffKnobLocal.style.transform = 'rotate('+(-30+diffIndexLocal*60)+'deg)';
+  }
+  diffKnobLocal.addEventListener('click', ()=>{ diffIndexLocal=(diffIndexLocal+1)%diffOptions.length; renderDiffKnobLocal(); });
+  renderDiffKnobLocal();
+
+  localBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    lobbyMenu.style.display = 'none';
+    fameRow.style.display = 'none';
+    localPanel.style.display = 'block';
+    localP1Name.value = (myNameInput.value||'PLAYER 1').toUpperCase().slice(0,10);
+  });
+
+  cancelLocalBtn.addEventListener('click', ()=>{
+    showLobbyMenu();
+  });
+
+  localStartBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    // Local Match never touches PeerJS/Net — it's a pure shared-screen game.
+    const n1 = (localP1Name.value||'PLAYER 1').toUpperCase().slice(0,10);
+    const n2 = (localP2Name.value||'PLAYER 2').toUpperCase().slice(0,10);
+    const diff = diffOptions[diffIndexLocal];
+    const tScore = ptsOptions[ptsIndexLocal];
+    startMatchLocal(n1, n2, tScore, diff);
+  });
+
+  // direct-link join: ?room=ABCD, or Telegram deep link ?startapp=ABCD
+  // (surfaced as Telegram.WebApp.initDataUnsafe.start_param inside the Mini App)
+  (function checkInviteLink(){
+    const params = new URLSearchParams(location.search);
+    let room = (params.get('room')||'').toUpperCase();
+    if((!room || room.length!==4) && TG){
+      const startParam = (TG.initDataUnsafe && TG.initDataUnsafe.start_param) || '';
+      const tgRoom = startParam.toUpperCase();
+      if(tgRoom.length===4) room = tgRoom;
+    }
+    if(room && room.length===4){
+      joinBtn.click();
+      joinCodeInput.value = room;
+    }
+  })();
+
+  /* =========================================================
+     SHARED GAME CONSTANTS
+  ========================================================= */
+  const LOGICAL_SIZE = 560;
+  let W=560,H=560,cx=280,cy=280,R=270;
+  const BALL_R = 7;
+  let DIFF = diffOptions[0];
+  let ball, paddleL, paddleR, targetScore, p1, p2, scoreL=0, scoreR=0, running=false, trail=[];
+  let matchEnded = false, matchPaused = false;
+
+  const LEFT_CENTER = Math.PI;
+  const RIGHT_CENTER = 0;
+  const GOAL_HALF = Math.PI*0.5;     // full half-circle — every point on the wall belongs to someone's goal, right up to the N/S poles where L and R meet
+  // Paddle angular half-width drives both collision AND the drawn bar, so they always stay in sync.
+  // It depends on the active difficulty (NORMAL gets a slightly bigger paddle than EXPERT), so read it
+  // from DIFF at call time rather than baking it into a constant.
+  function paddleHalf(){ return DIFF.paddleHalf; }
+  function paddleRange(){ return GOAL_HALF - paddleHalf(); } // center travel range; edge of paddle (center ± paddleHalf) always reaches exactly ±GOAL_HALF, i.e. the very end of the half
+
+  function norm(a){ a=a%(Math.PI*2); if(a<0) a+=Math.PI*2; return a; }
+  function angDiff(a,b){ let d=(a-b)%(Math.PI*2); if(d>Math.PI) d-=Math.PI*2; if(d<-Math.PI) d+=Math.PI*2; return d; }
+  function clampToRange(v, base){ const r=paddleRange(); return Math.max(base-r, Math.min(base+r, v)); }
+
+  const SERVE_HOLD_TICKS = 50; // ~0.83s of host ticks — ball sits still at center before launching
+  let serveTimer = 0, serveReceiver = null;
+  function resetBall(dir){
+    const speed = DIFF.base;
+    const ang = Math.random()*0.6-0.3;
+    ball = {
+      x:cx, y:cy,
+      vx:0, vy:0,
+      spin:0,
+      _serveVx: Math.cos(ang)*speed*dir,
+      _serveVy: Math.sin(ang)*speed,
+      _serveSpin: (Math.random()*2-1)*DIFF.curve*0.025,
+    };
+    trail = [];
+    serveTimer = SERVE_HOLD_TICKS;
+    serveReceiver = dir>0 ? 'R' : 'L'; // side the ball is launched toward
+  }
+
+  /* =========================================================
+     CANVAS FIT — devicePixelRatio-scaled, fixed logical space
+  ========================================================= */
+  function fitCanvas(){
+    const dpr = window.devicePixelRatio || 1;
+    // Measure the parent .crt container, NOT the canvas itself. Reading the canvas's own
+    // getBoundingClientRect() after we've just resized it can report a stale/rounded value
+    // (especially across mobile orientation changes), which then feeds back into the next
+    // resize and makes the canvas recursively shrink. The .crt wrapper's size is driven
+    // purely by CSS layout, so it's stable to measure from.
+    const crtEl = cv.parentElement; // <div class="crt"> wraps the canvas
+    const cssSize = (crtEl && crtEl.getBoundingClientRect().width) || LOGICAL_SIZE;
+    cv.width = Math.round(cssSize*dpr);
+    cv.height = Math.round(cssSize*dpr);
+    const scale = (cssSize/LOGICAL_SIZE)*dpr;
+    ctx.setTransform(scale,0,0,scale,0,0);
+  }
+  window.addEventListener('resize', fitCanvas);
+  window.addEventListener('orientationchange', ()=>setTimeout(fitCanvas,60));
+
+  /* =========================================================
+     INPUT — keyboard + single 1:1 touch/pointer drag pad
+  ========================================================= */
+  // Track by e.code (physical key position), NOT e.key (the character produced).
+  // e.key breaks in two real ways: (1) on non-QWERTY layouts (AZERTY, QWERTZ, Dvorak)
+  // the physical W/S keys produce different characters entirely, so they'd never match
+  // 'w'/'s' at all; (2) if Shift or CapsLock toggles while a key is held, keydown can
+  // report 'w' but the matching keyup reports 'W' (or vice versa) — the tracker never
+  // sees that specific case go false again, so the key stays permanently "stuck" on and
+  // silently fights every subsequent real press. e.code ('KeyW','KeyS','ArrowUp',
+  // 'ArrowDown') is the same value regardless of layout, Shift, or CapsLock.
+  const keys = {};
+  const MOVEMENT_CODES = new Set(['KeyW','KeyS','ArrowUp','ArrowDown']);
+  window.addEventListener('keydown', e=>{
+    keys[e.code] = true;
+    // Stop Up/Down/W/S from scrolling the page mid-match. Skip this while the person is
+    // actually typing in a text field (e.g. entering a player name), so those still work.
+    const typingInField = document.activeElement && (document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA');
+    if(!typingInField && MOVEMENT_CODES.has(e.code) && gameScreen.style.display==='block'){
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', e=>{ keys[e.code] = false; });
+  // If the tab/window loses focus while a key is physically held down, the browser simply
+  // stops delivering key events to the page — its keyup never fires. Without this, that
+  // key reads as permanently held once focus returns, which looks exactly like "the
+  // controls stopped responding" (the paddle drifts on its own, or a fresh press of the
+  // opposite key seems to do nothing because it's fighting a phantom held key).
+  function clearAllKeys(){ for(const k in keys) keys[k] = false; }
+  window.addEventListener('blur', clearAllKeys);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) clearAllKeys(); });
+
+  // Per-side touch target (angle), keyed by 'L'/'R'. In Local Match both sides are real
+  // players and both are tracked simultaneously. In Online Match only "my" side is ever
+  // populated, because setupPad() below refuses to arm the *other* player's pad at all.
+  let touchTargets = {L:null, R:null};
+  function setupPad(padEl, side){
+    let activeId = null;
+    // In an online match, a player only ever controls their own side. If iAmHost is true,
+    // the right pad (padR) belongs to the remote opponent and must be inert; if I'm the
+    // guest, the left pad (padL) belongs to the remote host and must be inert. This is
+    // checked up front so an accidental touch on the opponent's pad can never leak into
+    // touchTargets and snap that paddle. Local Match has no "opponent" — both pads are
+    // legitimately live — so the restriction is skipped entirely in that mode.
+    function isOpponentPad(){
+      if(isLocalMatch) return false;
+      if(iAmHost && side==='R') return true;
+      if(!iAmHost && side==='L') return true;
+      return false;
+    }
+    function move(clientY){
+      const rect = padEl.getBoundingClientRect();
+      let frac = (clientY-rect.top)/rect.height;
+      frac = Math.max(0, Math.min(1, frac));
+      const base = side==='L'?LEFT_CENTER:RIGHT_CENTER;
+      const sign = side==='L' ? -1 : 1;
+      touchTargets[side] = base + sign*(frac-0.5)*2*paddleRange();
+    }
+    padEl.addEventListener('pointerdown', e=>{
+      if(isOpponentPad()) return;
+      e.preventDefault(); activeId=e.pointerId;
+      padEl.setPointerCapture(e.pointerId);
+      padEl.classList.add('active'); move(e.clientY);
+    });
+    padEl.addEventListener('pointermove', e=>{
+      if(isOpponentPad()) return;
+      if(e.pointerId!==activeId) return; e.preventDefault(); move(e.clientY);
+    });
+    function release(e){ if(e.pointerId!==activeId) return; activeId=null; padEl.classList.remove('active'); touchTargets[side]=null; }
+    padEl.addEventListener('pointerup', release);
+    padEl.addEventListener('pointercancel', release);
+    padEl.addEventListener('pointerleave', e=>{ if(e.pointerId===activeId) release(e); });
+  }
+  const padL = document.getElementById('padL'), padR = document.getElementById('padR');
+  setupPad(padL,'L'); setupPad(padR,'R');
+
+  // Online: either W/S or Up/Down moves "my" paddle the intuitive way, regardless of which
+  // side it's on (each player has their own keyboard, so there's no ambiguity).
+  // Local: both players share one keyboard, so each side must respond ONLY to its own keys
+  // — Player 1 (left) uses W/S, Player 2 (right) uses Up/Down — or Player 1 could steal
+  // Player 2's paddle (and vice versa) with the "wrong" keys.
+  function computeMyAngleSimple(current, side, dtScale){
+    const base = side==='L'?LEFT_CENTER:RIGHT_CENTER;
+    let next = current;
+    if(touchTargets[side]!==null){
+      next = touchTargets[side];
+    } else {
+      const speed = 0.062*dtScale;
+      let up, down;
+      if(isLocalMatch){
+        if(side==='L'){ up = keys['KeyW']; down = keys['KeyS']; }
+        else { up = keys['ArrowUp']; down = keys['ArrowDown']; }
+      } else {
+        up = keys['KeyW'] || keys['ArrowUp'];
+        down = keys['KeyS'] || keys['ArrowDown'];
+      }
+      if(side==='L'){
+        if(up) next += speed;
+        if(down) next -= speed;
+      } else {
+        if(up) next -= speed;
+        if(down) next += speed;
+      }
+    }
+    return clampToRange(next, base);
+  }
+
+  /* =========================================================
+     PHYSICS (host-authoritative) — with continuous collision
+  ========================================================= */
+  let pendingEvents = [];
+  function queueEvent(kind, data){
+    const ev = Object.assign({kind}, data||{});
+    pendingEvents.push(ev);
+    applyLocalEventFx(ev); // host hears its own game live
+  }
+  // Runs identically on host (called live from queueEvent) and guest (called from received
+  // event list) — this is the one chokepoint where both sides see hits/scores at the same
+  // moment, so it's the right place to hang all juice (flash/shake/pulse) too.
+  function applyLocalEventFx(ev){
+    if(ev.kind==='paddleHit'){ sfx.paddleHit(); }
+    else if(ev.kind==='wallBounce'){ sfx.wallBounce(); }
+    else if(ev.kind==='score'){ sfx.score(); triggerShake(9,18); triggerFlash('255,90,70',0.42,16); pulseScore(ev.side); }
+    else if(ev.kind==='matchWin') sfx.matchWin();
+  }
+
+  /* ---- juice: screen shake / hit flash / score pulse ---- */
+  let shakeTimer=0, shakeDur=1, shakeMag=0;
+  function triggerShake(mag,dur){ shakeMag=mag; shakeTimer=dur; shakeDur=dur; }
+  let flashTimer=0, flashDur=1, flashRGB='89,255,160', flashPeak=0.3;
+  function triggerFlash(rgb,peak,dur){ flashRGB=rgb; flashPeak=peak; flashTimer=dur; flashDur=dur; }
+  function pulseScore(side){
+    const led = (side==='L' ? document.getElementById('scoreP1') : document.getElementById('scoreP2')).closest('.led');
+    if(!led) return;
+    led.classList.remove('pulse');
+    void led.offsetWidth; // force reflow so re-adding the class restarts the animation
+    led.classList.add('pulse');
+  }
+
+  function checkBoundary(){
+    const dx=ball.x-cx, dy=ball.y-cy;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist+BALL_R < R) return false;
+    const angle = norm(Math.atan2(dy,dx));
+    const leftLo=norm(LEFT_CENTER-GOAL_HALF), leftHi=norm(LEFT_CENTER+GOAL_HALF);
+    const rightLo=norm(RIGHT_CENTER-GOAL_HALF), rightHi=norm(RIGHT_CENTER+GOAL_HALF);
+    const inLeftGoal = angle>=leftLo && angle<=leftHi;
+    const inRightGoal = (angle>=rightLo && angle<=Math.PI*2) || (angle>=0 && angle<=rightHi);
+    let blocked=false;
+    if(inLeftGoal) blocked = Math.abs(angDiff(angle,paddleL.center))<=paddleHalf();
+    else if(inRightGoal) blocked = Math.abs(angDiff(angle,paddleR.center))<=paddleHalf();
+    else blocked = true;
+
+    if(blocked){
+      const nx=dx/dist, ny=dy/dist;
+      const vdotn = ball.vx*nx+ball.vy*ny;
+      ball.vx -= 2*vdotn*nx; ball.vy -= 2*vdotn*ny;
+      if(inLeftGoal||inRightGoal){
+        const pad = inLeftGoal?paddleL:paddleR;
+        const angVel = angDiff(pad.center,pad.prevCenter);
+        const tx=-ny, ty=nx;
+        // Dampen the kick relative to the ball's speed AFTER the bounce reflection, not a flat
+        // multiplier — this is what actually stops EXPERT (uncapped max) from spiking on one
+        // fast swing. A hard flick still gives a strong kick, it just can't exceed a fraction
+        // of current speed, so speed still climbs gradually hit-over-hit as intended.
+        const postBounceSpd = Math.hypot(ball.vx, ball.vy);
+        const rawKick = angVel*DIFF.kick;
+        const kickCap = Math.max(postBounceSpd, DIFF.base) * DIFF.kickCapFactor;
+        const kick = Math.max(-kickCap, Math.min(kickCap, rawKick));
+        ball.vx += tx*kick; ball.vy += ty*kick;
+        queueEvent('paddleHit');
+      } else {
+        queueEvent('wallBounce');
+      }
+      const curve=(Math.random()*2-1)*DIFF.curve;
+      const curA=Math.atan2(ball.vy,ball.vx)+curve;
+      const preSpd=Math.hypot(ball.vx,ball.vy);
+      ball.vx=Math.cos(curA)*preSpd; ball.vy=Math.sin(curA)*preSpd;
+      ball.spin=(Math.random()*2-1)*DIFF.curve*0.025;
+      const spd=Math.min(DIFF.max, preSpd*DIFF.growth);
+      const a2=Math.atan2(ball.vy,ball.vx);
+      ball.vx=Math.cos(a2)*spd; ball.vy=Math.sin(a2)*spd;
+      const newDist=R-BALL_R-1;
+      ball.x=cx+Math.cos(angle)*newDist; ball.y=cy+Math.sin(angle)*newDist;
+      return true;
+    } else {
+      if(inLeftGoal){ scoreR++; queueEvent('score',{side:'R'}); }
+      else { scoreL++; queueEvent('score',{side:'L'}); }
+      document.getElementById('scoreP1').textContent = scoreL;
+      document.getElementById('scoreP2').textContent = scoreR;
+      if(scoreL>=targetScore || scoreR>=targetScore){
+        const winnerIsL = scoreL>=targetScore;
+        queueEvent('matchWin', {winnerName: winnerIsL?p1:p2, loserName: winnerIsL?p2:p1});
+        matchEnded = true;
+      } else {
+        resetBall(inLeftGoal?1:-1);
+      }
+      return true;
+    }
+  }
+
+  let speedDisplayTimer = 0;
+  function physicsSubstep(){
+    if(serveTimer>0){
+      serveTimer--;
+      if(serveTimer<=0){
+        ball.vx = ball._serveVx||0; ball.vy = ball._serveVy||0; ball.spin = ball._serveSpin||0;
+        delete ball._serveVx; delete ball._serveVy; delete ball._serveSpin;
+      }
+      speedDisplayTimer = 0;
+      document.getElementById('scoreSpeed').textContent = '0.0';
+      return; // ball stays parked at center — no movement, no collision checks, during the hold
+    }
+    if(ball.spin){
+      const curAng=Math.atan2(ball.vy,ball.vx)+ball.spin;
+      const curSpd=Math.hypot(ball.vx,ball.vy);
+      ball.vx=Math.cos(curAng)*curSpd; ball.vy=Math.sin(curAng)*curSpd;
+      // Decay spin each tick instead of holding it at full strength for the whole flight —
+      // a fresh random spin still gets assigned on every real bounce, but its curving effect
+      // now fades the longer the ball is in the air, so long rallies don't get twitchier.
+      ball.spin *= 0.985;
+      if(Math.abs(ball.spin)<0.0008) ball.spin = 0;
+    }
+    // continuous collision detection: sub-step travel so fast balls can't tunnel through the ring
+    const totalSpeed = Math.hypot(ball.vx,ball.vy);
+    const maxStep = 6;
+    const nSub = Math.max(1, Math.min(12, Math.ceil(totalSpeed/maxStep)));
+    const stepVx = ball.vx/nSub, stepVy = ball.vy/nSub;
+    let handled = false;
+    for(let i=0;i<nSub && !handled;i++){
+      ball.x += stepVx; ball.y += stepVy;
+      handled = checkBoundary();
+    }
+    trail.push({x:ball.x,y:ball.y});
+    if(trail.length>16) trail.shift();
+
+    speedDisplayTimer++;
+    if(speedDisplayTimer>=6){
+      speedDisplayTimer=0;
+      document.getElementById('scoreSpeed').textContent = Math.hypot(ball.vx,ball.vy).toFixed(1);
+    }
+  }
+
+  let guestInputAngle = null;
+  function hostTick(){
+    if(matchEnded || matchPaused) return;
+    paddleL.prevCenter = paddleL.center;
+    paddleR.prevCenter = paddleR.center;
+    paddleL.center = computeMyAngleSimple(paddleL.center, 'L', 1);
+    if(isLocalMatch){
+      // No remote guest to report an angle — Player 2's input is read locally too.
+      paddleR.center = computeMyAngleSimple(paddleR.center, 'R', 1);
+    } else {
+      paddleR.center = clampToRange(guestInputAngle!==null?guestInputAngle:paddleR.center, RIGHT_CENTER);
+    }
+    physicsSubstep();
+  }
+
+  let lastSendTime = 0;
+  function broadcastState(force){
+    const now = performance.now();
+    if(!force && now-lastSendTime<16) return;
+    lastSendTime = now;
+    Net.send({
+      t:'state',
+      ball:{x:ball.x,y:ball.y,vx:ball.vx,vy:ball.vy},
+      paddleL:paddleL.center, paddleR:paddleR.center,
+      scoreL, scoreR,
+      serveTimer, serveReceiver,
+      events: pendingEvents
+    });
+    pendingEvents = [];
+  }
+
+  /* =========================================================
+     GUEST — receives snapshots, renders interpolated state
+  ========================================================= */
+  let snapPrev=null, snapCur=null;
+  function onHostState(msg){
+    snapPrev = snapCur;
+    snapCur = msg;
+    snapCur._recvTime = performance.now();
+    scoreL = msg.scoreL; scoreR = msg.scoreR;
+    serveTimer = msg.serveTimer||0; serveReceiver = msg.serveReceiver||serveReceiver;
+    document.getElementById('scoreP1').textContent = scoreL;
+    document.getElementById('scoreP2').textContent = scoreR;
+    if(msg.events && msg.events.length){
+      msg.events.forEach(ev=>{
+        applyLocalEventFx(ev);
+        if(ev.kind==='matchWin'){ matchEnded = true; endGame(ev.winnerName, ev.loserName); }
+      });
+    }
+    document.getElementById('scoreSpeed').textContent = Math.hypot(msg.ball.vx, msg.ball.vy).toFixed(1);
+  }
+  function guestInterpolatedBall(){
+    if(!snapCur) return {x:cx,y:cy};
+    if(!snapPrev) return {x:snapCur.ball.x, y:snapCur.ball.y};
+    const interval = Math.max(16, snapCur._recvTime-snapPrev._recvTime);
+    const alpha = Math.min(1.4, (performance.now()-snapCur._recvTime)/interval);
+    return {
+      x: snapPrev.ball.x + (snapCur.ball.x-snapPrev.ball.x)*alpha,
+      y: snapPrev.ball.y + (snapCur.ball.y-snapPrev.ball.y)*alpha
+    };
+  }
+  function guestInterpolatedPaddleL(){
+    if(!snapCur) return LEFT_CENTER;
+    if(!snapPrev) return snapCur.paddleL;
+    const interval = Math.max(16, snapCur._recvTime-snapPrev._recvTime);
+    const alpha = Math.min(1.4, (performance.now()-snapCur._recvTime)/interval);
+    return snapPrev.paddleL + angDiff(snapCur.paddleL, snapPrev.paddleL)*alpha;
+  }
+
+  let guestLastSend = 0;
+  function guestFrame(delta){
+    const dtScale = delta/(1000/60);
+    paddleR.center = computeMyAngleSimple(paddleR.center, 'R', dtScale);
+    const now = performance.now();
+    if(now-guestLastSend>=16){
+      guestLastSend = now;
+      Net.send({t:'input', angle: paddleR.center});
+    }
+    const b = guestInterpolatedBall();
+    ball.x = b.x; ball.y = b.y;
+    paddleL.center = guestInterpolatedPaddleL();
+    trail.push({x:ball.x,y:ball.y});
+    if(trail.length>16) trail.shift();
+  }
+
+  /* =========================================================
+     RENDER
+  ========================================================= */
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    if(shakeTimer>0){
+      const t = shakeTimer/shakeDur;
+      ctx.translate((Math.random()*2-1)*shakeMag*t, (Math.random()*2-1)*shakeMag*t);
+      shakeTimer--;
+    }
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.clip();
+    ctx.fillStyle = 'rgba(7,27,16,0.35)';
+    ctx.fillRect(0,0,W,H);
+
+    ctx.strokeStyle = 'rgba(89,255,160,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy,R-2,0,Math.PI*2); ctx.strokeStyle='rgba(89,255,160,0.15)'; ctx.stroke();
+
+    // The vertical line is the real P1/P2 boundary now (goals span the full half-circle,
+    // meeting exactly at the top and bottom poles), so draw it brighter than the plain
+    // horizontal reference line instead of the same faint crosshair tint.
+    ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R);
+    ctx.strokeStyle = 'rgba(255,176,0,0.35)'; ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Dotted wall track — marks exactly where the ball travels/bounces, so it's always clear
+    // how far a paddle bar needs to reach before the ball just bounces off empty wall.
+    ctx.beginPath();
+    ctx.arc(cx,cy,R-3,0,Math.PI*2);
+    ctx.setLineDash([2,5]);
+    ctx.strokeStyle = 'rgba(255,176,0,0.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    drawArc(paddleL.center);
+    drawArc(paddleR.center);
+    drawLabel(paddleL.center, 'P1');
+    drawLabel(paddleR.center, 'P2');
+
+    for(let i=0;i<trail.length;i++){
+      const t = trail[i];
+      const alpha = (i/trail.length)*0.5;
+      ctx.beginPath();
+      ctx.arc(t.x,t.y,BALL_R*0.7,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(89,255,160,'+alpha+')';
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(ball.x,ball.y,BALL_R,0,Math.PI*2);
+    ctx.fillStyle = '#d8ffe8';
+    ctx.shadowColor = '#59ffa0'; ctx.shadowBlur = 14;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if(serveTimer>0){
+      const pct = 1-(serveTimer/SERVE_HOLD_TICKS);
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL_R+9, -Math.PI/2, -Math.PI/2 + pct*Math.PI*2);
+      ctx.strokeStyle = 'rgba(89,255,160,0.8)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      const receiverName = serveReceiver==='L' ? p1 : p2;
+      ctx.font = 'bold 12px Courier New';
+      ctx.fillStyle = '#ffb000';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+      ctx.fillText('SERVING \u2192 '+(receiverName||''), cx, cy-38);
+      ctx.shadowBlur = 0;
+    }
+
+    if(flashTimer>0){
+      const alpha = flashPeak*(flashTimer/flashDur);
+      ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
+      ctx.fillStyle = 'rgba('+flashRGB+','+alpha+')';
+      ctx.fill();
+      flashTimer--;
+    }
+    ctx.restore();
+  }
+  function drawLabel(centerAngle, text){
+    const r = R-26;
+    const x = cx+Math.cos(centerAngle)*r, y = cy+Math.sin(centerAngle)*r;
+    ctx.font = 'bold 13px Courier New';
+    ctx.fillStyle = '#ffb000';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+    ctx.fillText(text, x, y);
+    ctx.shadowBlur = 0;
+  }
+  function drawArc(centerAngle){
+    ctx.beginPath();
+    ctx.arc(cx,cy,R-4, centerAngle-paddleHalf(), centerAngle+paddleHalf());
+    ctx.strokeStyle = '#59ffa0';
+    ctx.lineWidth = 9;
+    ctx.shadowColor = '#59ffa0'; ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  /* =========================================================
+     FIXED-TIMESTEP MAIN LOOP — decoupled from refresh rate
+  ========================================================= */
+  const TICK_MS = 1000/60;
+  let accumulator = 0, lastFrameTime = 0, rafId = null;
+  function frameLoop(now){
+    rafId = requestAnimationFrame(frameLoop);
+    if(!lastFrameTime) lastFrameTime = now;
+    let delta = now - lastFrameTime;
+    lastFrameTime = now;
+    if(delta>250) delta=250; // clamp huge gaps (tab switch) to avoid spiral of death
+
+    if(iAmHost){
+      accumulator += delta;
+      let ticks = 0;
+      while(accumulator>=TICK_MS && ticks<8){
+        hostTick();
+        accumulator -= TICK_MS;
+        ticks++;
+      }
+      if(!isLocalMatch){
+        if(!matchEnded) broadcastState(false);
+        if(matchEnded && !matchEndedHandled){
+          matchEndedHandled = true;
+          broadcastState(true);
+        }
+      } else if(matchEnded && !matchEndedHandled){
+        matchEndedHandled = true;
+      }
+    } else {
+      guestFrame(delta);
+    }
+    draw();
+  }
+  let matchEndedHandled = false;
+
+  /* =========================================================
+     MATCH LIFECYCLE
+  ========================================================= */
+  const connStatusEl = document.getElementById('connStatus');
+  const reconnectOverlay = document.getElementById('reconnect-overlay');
+  const reconnectMsg = document.getElementById('reconnectMsg');
+
+  function setConnStatus(state, text){
+    connStatusEl.textContent = text;
+    connStatusEl.classList.toggle('warn', state==='warn');
+    connStatusEl.classList.toggle('bad', state==='bad');
+  }
+
+  function commonMatchSetup(pl1, pl2, tScore){
+    p1 = pl1; p2 = pl2; targetScore = tScore;
+    scoreL = 0; scoreR = 0; matchEnded = false; matchEndedHandled = false; matchPaused = false;
+    paddleL = {center:LEFT_CENTER, prevCenter:LEFT_CENTER};
+    paddleR = {center:RIGHT_CENTER, prevCenter:RIGHT_CENTER};
+    resetBall(Math.random()<0.5?1:-1);
+    document.getElementById('lblP1').textContent = p1;
+    document.getElementById('lblP2').textContent = p2;
+    document.getElementById('tpLabelL').textContent = p1;
+    document.getElementById('tpLabelR').textContent = p2;
+    document.getElementById('scoreP1').textContent = '0';
+    document.getElementById('scoreP2').textContent = '0';
+    document.getElementById('scoreTarget').textContent = targetScore;
+    document.getElementById('scoreSpeed').textContent = DIFF.base.toFixed(1);
+    lobbyScreen.style.display = 'none';
+    overScreen.style.display = 'none';
+    gameScreen.style.display = 'block';
+    requestAnimationFrame(()=>{ fitCanvas(); });
+    touchTargets.L = null; touchTargets.R = null;
+    padL.classList.toggle('opponent-pad', iAmHost===false);
+    padR.classList.toggle('opponent-pad', iAmHost===true);
+    setConnStatus('ok', '\u25CF LIVE');
+    reconnectOverlay.style.display = 'none';
+    beginLoop();
+  }
+
+  function beginLoop(){
+    lastFrameTime = 0; accumulator = 0;
+    if(rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(frameLoop);
+  }
+
+  function wireInGameNet(){
+    Net.onData = (msg)=>{
+      if(iAmHost){
+        if(msg.t==='input'){ guestInputAngle = msg.angle; }
+        else if(msg.t==='rematchRequest'){ hostStartRematch(); }
+        else if(msg.t==='quit'){ handlePeerQuit(); }
+      } else {
+        if(msg.t==='state'){ onHostState(msg); }
+        else if(msg.t==='config'){ guestApplyRematch(msg); }
+        else if(msg.t==='quit'){ handlePeerQuit(); }
+      }
+    };
+    Net.onClose = ()=>{
+      if(matchEnded) return;
+      matchPaused = true;
+      setConnStatus('warn', '\u25D0 CONNECTION LOST');
+      reconnectOverlay.style.display = 'flex';
+      document.getElementById('reconnectTitle').textContent = 'CONNECTION LOST';
+      reconnectMsg.textContent = iAmHost ? 'Waiting for opponent to reconnect\u2026' : 'Attempting to reconnect\u2026';
+    };
+    Net.onOpen = ()=>{
+      matchPaused = false;
+      setConnStatus('ok', '\u25CF LIVE');
+      reconnectOverlay.style.display = 'none';
+    };
+    Net.onRetry = (n)=>{
+      reconnectMsg.textContent = 'Reconnecting\u2026 attempt '+n+' of 6';
+    };
+    Net.onGiveUp = ()=>{
+      document.getElementById('reconnectTitle').textContent = 'OPPONENT LEFT';
+      reconnectMsg.textContent = 'Could not reconnect. Try again below, or return to the menu.';
+      setConnStatus('bad', '\u25CB DISCONNECTED');
+    };
+  }
+
+  document.getElementById('tryReconnectBtn').addEventListener('click', ()=>{
+    ensureAudio();
+    if(matchEnded) return;
+    if(iAmHost){
+      // The host doesn't dial out — it just waits for the guest's peer to reconnect. If the
+      // host's own signalling socket got dropped, nudge it back online so it can accept
+      // that incoming connection again.
+      reconnectMsg.textContent = 'Waiting for opponent to reconnect\u2026';
+      document.getElementById('reconnectTitle').textContent = 'CONNECTION LOST';
+      if(Net.peer && Net.peer.disconnected){ try{ Net.peer.reconnect(); }catch(e){} }
+    } else {
+      // Guest side: automated retries stop after 6 attempts (Net._attemptReconnect sets
+      // reconnecting=false once it gives up), so calling it again here manually restarts
+      // a fresh run of up to 6 more attempts instead of leaving the player stuck.
+      document.getElementById('reconnectTitle').textContent = 'CONNECTION LOST';
+      reconnectMsg.textContent = 'Reconnecting\u2026';
+      Net._attemptReconnect();
+    }
+  });
+
+  function handlePeerQuit(){
+    matchEnded = true;
+    cancelAnimationFrame(rafId);
+    alert('Your opponent left the match.');
+    returnToLobby();
+  }
+
+  function returnToLobby(){
+    Net.teardown();
+    cancelAnimationFrame(rafId);
+    gameScreen.style.display = 'none';
+    overScreen.style.display = 'none';
+    lobbyScreen.style.display = 'block';
+    showLobbyMenu();
+    guestName = null; iAmHost = false; isLocalMatch = false;
+    snapPrev = null; snapCur = null; guestInputAngle = null;
+  }
+
+  function startMatchLocal(pl1, pl2, tScore, diff){
+    isLocalMatch = true;
+    iAmHost = true; // reuses the host-authoritative simulation path, just with local P2 input
+    DIFF = diff;
+    // Deliberately skip wireInGameNet() — no PeerJS peer/connection exists for Local Match,
+    // and any leftover Net callbacks from a previous online match must not fire into this one.
+    Net.onData = null; Net.onOpen = null; Net.onClose = null; Net.onRetry = null; Net.onGiveUp = null;
+    commonMatchSetup(pl1, pl2, tScore);
+    // Both paddles are locally controlled — neither pad is an "opponent" pad here.
+    padL.classList.remove('opponent-pad');
+    padR.classList.remove('opponent-pad');
+    setConnStatus('ok', '\u25CF LOCAL');
+    reconnectOverlay.style.display = 'none';
+  }
+  function startMatchAsHost(pl1, pl2, tScore, diff){
+    DIFF = diff;
+    wireInGameNet();
+    commonMatchSetup(pl1, pl2, tScore);
+    Net.send({t:'config', p1:pl1, p2:pl2, targetScore:tScore, diff:diff});
+  }
+  function startMatchAsGuest(pl1, pl2, tScore, diff){
+    DIFF = diff || DIFF;
+    wireInGameNet();
+    commonMatchSetup(pl1, pl2, tScore);
+  }
+  function hostStartRematch(){
+    wireInGameNet();
+    commonMatchSetup(p1, p2, targetScore);
+    Net.send({t:'config', p1, p2, targetScore, diff:DIFF});
+  }
+  function guestApplyRematch(msg){
+    DIFF = msg.diff || DIFF;
+    wireInGameNet();
+    commonMatchSetup(msg.p1, msg.p2, msg.targetScore);
+  }
+
+  async function endGame(winner, loser){
+    matchEnded = true;
+    cancelAnimationFrame(rafId);
+    gameScreen.style.display = 'none';
+    overScreen.style.display = 'block';
+    document.getElementById('winnerLine').textContent = 'WINNER \u2014 ' + winner;
+    document.getElementById('loserLine').textContent = loser + ' loses this round';
+    const rematchBtn = document.getElementById('rematchBtn');
+    rematchBtn.disabled = false;
+    rematchBtn.textContent = 'REMATCH';
+    const box = document.getElementById('fameBox');
+    const list = recordWin(winner);
+    renderFame(list, box);
+  }
+
+  document.getElementById('quitBtn').addEventListener('click', ()=>{
+    Net.send({t:'quit'});
+    matchEnded = true;
+    cancelAnimationFrame(rafId);
+    setTimeout(returnToLobby, 60); // give the reliable channel a moment to flush the quit message
+  });
+  document.getElementById('rematchBtn').addEventListener('click', (e)=>{
+    if(isLocalMatch){
+      startMatchLocal(p1, p2, targetScore, DIFF);
+    } else if(iAmHost){
+      hostStartRematch();
+    } else {
+      Net.send({t:'rematchRequest'});
+      e.target.disabled = true;
+      e.target.textContent = 'WAITING FOR HOST\u2026';
+    }
+  });
+  document.getElementById('menuBtn').addEventListener('click', ()=>{
+    Net.send({t:'quit'});
+    setTimeout(returnToLobby, 60);
+  });
+
+  // host's own local endGame trigger, since host detects matchEnded inside checkBoundary via queueEvent
+  const _origQueueEvent = queueEvent;
+  queueEvent = function(kind, data){
+    _origQueueEvent(kind, data);
+    if(kind==='matchWin' && iAmHost){
+      endGame(data.winnerName, data.loserName);
+    }
+  };
+
+})();
+</script>
+</body>
+</html>
