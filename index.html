@@ -557,6 +557,23 @@
     connected:false, reconnecting:false, reconnectAttempts:0,
     onData:null, onOpen:null, onClose:null, onRetry:null, onGiveUp:null,
     _reliableSeq:0, _pendingReliable:{}, _processedRids:null,
+    // A STUN-only setup can only ever find a DIRECT path between the two players' devices —
+    // it fails, or finds a poor/high-jitter path, whenever either side is behind a NAT that
+    // won't cleanly hole-punch (very common for phones on mobile data / carrier-grade NAT).
+    // That reads exactly like "works, but choppy for the guest." A TURN server is a relay
+    // that both sides can always reach, used as a fallback when a direct path isn't good —
+    // it fixes the connection quality itself, independent of anything the app-level code
+    // does with reliable/unreliable channels. The credentials below (Open Relay Project)
+    // are a free, publicly shared TURN service meant for exactly this kind of use — swap
+    // in your own free-tier TURN credentials (metered.ca, Twilio, Xirsys, etc.) for a
+    // production app so you're not depending on a shared public relay's uptime/quota.
+    ICE_SERVERS:[
+      { urls:'stun:stun.l.google.com:19302' },
+      { urls:'stun:openrelay.metered.ca:80' },
+      { urls:'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject' },
+      { urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject' },
+      { urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject' }
+    ],
     makeId(code){ return 'circlepong-eo174a-'+code; },
     randomCode(){
       const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O — avoids confusion
@@ -570,7 +587,7 @@
       const id = this.makeId(code);
       let settled = false;
       let peer;
-      try{ peer = new Peer(id, {debug:0}); }
+      try{ peer = new Peer(id, {debug:0, config:{iceServers:this.ICE_SERVERS}}); }
       catch(e){ onStatus('Could not start networking. Check your connection.'); return; }
       peer.on('open', ()=>{
         settled = true;
@@ -595,7 +612,7 @@
       this.roomCode = code;
       this.hostPeerId = this.makeId(code);
       let peer;
-      try{ peer = new Peer({debug:0}); }
+      try{ peer = new Peer({debug:0, config:{iceServers:this.ICE_SERVERS}}); }
       catch(e){ onStatus('Could not start networking. Check your connection.', true); return; }
       peer.on('open', ()=>{
         this.peer = peer;
@@ -1285,7 +1302,13 @@
   /* =========================================================
      GUEST — receives snapshots, renders interpolated state
   ========================================================= */
-  let snapPrev=null, snapCur=null, lastAppliedSeq=-1, seenEventIds=null;
+  let snapHistory=[], lastAppliedSeq=-1, seenEventIds=null;
+  // Render slightly in the past (a small, fixed delay) instead of guessing ahead of the
+  // newest snapshot. That means we're always interpolating between two REAL received
+  // positions, so uneven arrival timing (jitter) just gets smoothed over — the alternative
+  // (extrapolating forward from the latest point) is what caused the visible "snap forward
+  // then get yanked back" look whenever a packet was a bit late.
+  const RENDER_DELAY_MS = 80;
   function onHostState(msg){
     // The state channel is unreliable+unordered now (see Net._connectToHost), so a
     // late-arriving old packet can show up after a newer one already has — seq guards
@@ -1294,9 +1317,8 @@
       if(msg.seq<=lastAppliedSeq) return;
       lastAppliedSeq = msg.seq;
     }
-    snapPrev = snapCur;
-    snapCur = msg;
-    snapCur._recvTime = performance.now();
+    snapHistory.push({ball:msg.ball, paddleL:msg.paddleL, t:performance.now()});
+    if(snapHistory.length>24) snapHistory.shift();
     scoreL = msg.scoreL; scoreR = msg.scoreR;
     serveTimer = msg.serveTimer||0; serveReceiver = msg.serveReceiver||serveReceiver;
     document.getElementById('scoreP1').textContent = scoreL;
@@ -1318,22 +1340,37 @@
     }
     document.getElementById('scoreSpeed').textContent = Math.hypot(msg.ball.vx, msg.ball.vy).toFixed(1);
   }
-  function guestInterpolatedBall(){
-    if(!snapCur) return {x:cx,y:cy};
-    if(!snapPrev) return {x:snapCur.ball.x, y:snapCur.ball.y};
-    const interval = Math.max(16, snapCur._recvTime-snapPrev._recvTime);
-    const alpha = Math.min(1.4, (performance.now()-snapCur._recvTime)/interval);
-    return {
-      x: snapPrev.ball.x + (snapCur.ball.x-snapPrev.ball.x)*alpha,
-      y: snapPrev.ball.y + (snapCur.ball.y-snapPrev.ball.y)*alpha
-    };
-  }
-  function guestInterpolatedPaddleL(){
-    if(!snapCur) return LEFT_CENTER;
-    if(!snapPrev) return snapCur.paddleL;
-    const interval = Math.max(16, snapCur._recvTime-snapPrev._recvTime);
-    const alpha = Math.min(1.4, (performance.now()-snapCur._recvTime)/interval);
-    return snapPrev.paddleL + angDiff(snapCur.paddleL, snapPrev.paddleL)*alpha;
+  // Finds the two buffered snapshots that bracket "now minus RENDER_DELAY_MS" and blends
+  // between them. Falls back to holding the oldest/newest buffered point at the edges
+  // (connection just started, or a long gap since the last packet) rather than
+  // extrapolating past known data.
+  function guestRenderState(){
+    if(snapHistory.length===0) return {ball:{x:cx,y:cy}, paddleL:LEFT_CENTER};
+    if(snapHistory.length===1){
+      const s = snapHistory[0];
+      return {ball:{x:s.ball.x,y:s.ball.y}, paddleL:s.paddleL};
+    }
+    const renderTime = performance.now() - RENDER_DELAY_MS;
+    if(renderTime <= snapHistory[0].t){
+      const f = snapHistory[0];
+      return {ball:{x:f.ball.x,y:f.ball.y}, paddleL:f.paddleL};
+    }
+    for(let i=snapHistory.length-1;i>0;i--){
+      const older = snapHistory[i-1], newer = snapHistory[i];
+      if(older.t<=renderTime){
+        const span = Math.max(1, newer.t-older.t);
+        const alpha = Math.min(1.25, Math.max(0, (renderTime-older.t)/span));
+        return {
+          ball:{
+            x: older.ball.x + (newer.ball.x-older.ball.x)*alpha,
+            y: older.ball.y + (newer.ball.y-older.ball.y)*alpha
+          },
+          paddleL: older.paddleL + angDiff(newer.paddleL, older.paddleL)*alpha
+        };
+      }
+    }
+    const last = snapHistory[snapHistory.length-1];
+    return {ball:{x:last.ball.x,y:last.ball.y}, paddleL:last.paddleL};
   }
 
   let guestLastSend = 0;
@@ -1345,9 +1382,9 @@
       guestLastSend = now;
       Net.send({t:'input', angle: paddleR.center});
     }
-    const b = guestInterpolatedBall();
-    ball.x = b.x; ball.y = b.y;
-    paddleL.center = guestInterpolatedPaddleL();
+    const r = guestRenderState();
+    ball.x = r.ball.x; ball.y = r.ball.y;
+    paddleL.center = r.paddleL;
     trail.push({x:ball.x,y:ball.y});
     if(trail.length>16) trail.shift();
   }
@@ -1605,7 +1642,7 @@
     lobbyScreen.style.display = 'block';
     showLobbyMenu();
     guestName = null; iAmHost = false; isLocalMatch = false;
-    snapPrev = null; snapCur = null; lastAppliedSeq = -1; seenEventIds = null; guestInputAngle = null;
+    snapHistory = []; lastAppliedSeq = -1; seenEventIds = null; guestInputAngle = null;
   }
 
   function startMatchLocal(pl1, pl2, tScore, diff){
